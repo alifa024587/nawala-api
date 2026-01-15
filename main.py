@@ -1,11 +1,16 @@
 from fastapi import FastAPI, Query
 import dns.resolver
+import requests
 
 app = FastAPI(
     title="Nawala / ISP DNS Checker API",
-    description="Cek status domain menggunakan DNS ISP Indonesia",
+    description="Cek status domain via DNS ISP + Relay Indonesia",
     version="1.0.0"
 )
+
+# ===============================
+# KONFIGURASI
+# ===============================
 
 DNS_ISP = {
     "telkom": "202.134.1.10",
@@ -13,7 +18,14 @@ DNS_ISP = {
     "biznet": "202.134.0.62"
 }
 
-def resolve_domain(domain: str):
+RELAY_URL = "http://103.146.202.228:4000/resolve"
+# GANTI IP_VPS_RELAY dengan IP VPS Indonesia kamu
+
+# ===============================
+# FUNGSI DNS ISP (LOKAL)
+# ===============================
+
+def resolve_isp(domain: str):
     results = {}
 
     for isp, dns_ip in DNS_ISP.items():
@@ -44,21 +56,52 @@ def resolve_domain(domain: str):
 
     return results
 
+# ===============================
+# FUNGSI RELAY INDONESIA
+# ===============================
+
+def relay_check(domain: str):
+    try:
+        r = requests.post(
+            RELAY_URL,
+            params={"domain": domain},
+            timeout=3
+        )
+        return r.json()
+    except Exception:
+        return {
+            "status": "UNREACHABLE"
+        }
+
+# ===============================
+# ENDPOINT UTAMA
+# ===============================
 
 @app.get("/check")
-def check(domain: str = Query(..., description="Domain yang akan dicek")):
-    results = resolve_domain(domain)
+def check_domain(domain: str = Query(..., description="Domain yang akan dicek")):
 
-    # ANALISIS STATUS GLOBAL
-    open_count = sum(1 for r in results.values() if r["status"] == "OPEN")
-    blocked_count = sum(1 for r in results.values() if r["status"] == "BLOCKED")
+    isp_results = resolve_isp(domain)
+    relay_result = relay_check(domain)
 
-    if open_count > 0:
+    open_count = sum(1 for r in isp_results.values() if r["status"] == "OPEN")
+    blocked_count = sum(1 for r in isp_results.values() if r["status"] == "BLOCKED")
+
+    # ===============================
+    # LOGIKA FINAL STATUS
+    # ===============================
+
+    if relay_result["status"] == "OPEN":
         final_status = "NOT_BLOCKED"
-        explanation = "Domain dapat di-resolve oleh setidaknya satu DNS ISP"
-    elif blocked_count == len(results):
+        explanation = "Relay Indonesia berhasil resolve domain"
+
+    elif blocked_count == len(isp_results):
         final_status = "SUSPECTED_BLOCKED_ISP"
         explanation = "Domain diblokir oleh seluruh DNS ISP yang diuji"
+
+    elif open_count > 0:
+        final_status = "NOT_BLOCKED"
+        explanation = "Domain dapat diakses oleh sebagian DNS ISP"
+
     else:
         final_status = "UNKNOWN"
         explanation = "Tidak ada respon DNS yang meyakinkan"
@@ -67,6 +110,7 @@ def check(domain: str = Query(..., description="Domain yang akan dicek")):
         "domain": domain,
         "status": final_status,
         "explanation": explanation,
-        "isp_results": results,
-        "note": "Ini bukan API resmi Nawala, hanya indikasi berbasis DNS ISP"
+        "isp_results": isp_results,
+        "relay_indonesia": relay_result,
+        "note": "Ini bukan API resmi Nawala, hanya indikasi berbasis DNS"
     }
