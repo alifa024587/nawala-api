@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 import dns.resolver
 
 app = FastAPI(title="Nawala Checker API")
