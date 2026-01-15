@@ -1,90 +1,72 @@
 from fastapi import FastAPI, Query
 import dns.resolver
 
-app = FastAPI(title="Nawala Checker API")
+app = FastAPI(
+    title="Nawala / ISP DNS Checker API",
+    description="Cek status domain menggunakan DNS ISP Indonesia",
+    version="1.0.0"
+)
 
-DNS_ISP = [
-    "202.134.1.10",   # Telkom
-    "202.134.0.155",  # Indihome
-    "202.134.0.62"    # Biznet
-]
+DNS_ISP = {
+    "telkom": "202.134.1.10",
+    "indihome": "202.134.0.155",
+    "biznet": "202.134.0.62"
+}
 
-def check_domain(domain):
-    for dns_ip in DNS_ISP:
+def resolve_domain(domain: str):
+    results = {}
+
+    for isp, dns_ip in DNS_ISP.items():
         try:
-            r = dns.resolver.Resolver()
-            r.nameservers = [dns_ip]
-            r.timeout = 2
-            r.lifetime = 2
+            resolver = dns.resolver.Resolver()
+            resolver.nameservers = [dns_ip]
+            resolver.timeout = 2
+            resolver.lifetime = 2
 
-            ans = r.resolve(domain, "A")
-            ips = [a.address for a in ans]
+            answer = resolver.resolve(domain, "A")
+            ips = [r.address for r in answer]
 
-            return {
+            results[isp] = {
                 "status": "OPEN",
-                "dns": dns_ip,
                 "ips": ips
             }
 
         except dns.resolver.NXDOMAIN:
-            return {
+            results[isp] = {
                 "status": "BLOCKED",
-                "dns": dns_ip,
                 "reason": "NXDOMAIN"
             }
-        except Exception:
-            continue
 
-    return {
-        "status": "UNKNOWN",
-        "reason": "NO DNS RESPONSE"
-    }
+        except Exception:
+            results[isp] = {
+                "status": "NO_RESPONSE"
+            }
+
+    return results
+
 
 @app.get("/check")
-def check_domain(domain: str = Query(...)):
-    results = {}
+def check(domain: str = Query(..., description="Domain yang akan dicek")):
+    results = resolve_domain(domain)
 
-    for name, dns in RESOLVERS.items():
-        results[name] = dig_query(dns, domain)
+    # ANALISIS STATUS GLOBAL
+    open_count = sum(1 for r in results.values() if r["status"] == "OPEN")
+    blocked_count = sum(1 for r in results.values() if r["status"] == "BLOCKED")
 
-    # ⬇️ WAJIB ADA DEFAULT VALUE
-    status = "unknown"
-    explanation = "Kondisi tidak dapat ditentukan"
-
-    # Domain mati
-    if not results["google"] and not results["cloudflare"]:
-        status = "domain_unreachable"
-        explanation = "Domain tidak dapat di-resolve oleh DNS publik"
-
-    # DNS publik OK, tapi Nawala tidak terjangkau
-    elif results["google"] and results["cloudflare"] and results["nawala"] is None:
-        status = "nawala_unreachable"
-        explanation = (
-            "Server tidak dapat menjangkau DNS Nawala "
-            "(kemungkinan bukan jaringan Indonesia)"
-        )
-
-    # Semua resolve
-    elif results["google"] and results["cloudflare"] and results["nawala"]:
-        status = "not_blocked"
-        explanation = "Domain dapat diakses normal oleh semua DNS"
-
-    # DNS publik resolve, Nawala reachable tapi kosong
-    elif results["google"] and results["cloudflare"] and results["nawala"] == "":
-        status = "suspected_blocked_isp"
-        explanation = (
-            "Domain ter-resolve di DNS publik namun tidak di DNS Nawala "
-            "(indikasi blokir ISP)"
-        )
+    if open_count > 0:
+        final_status = "NOT_BLOCKED"
+        explanation = "Domain dapat di-resolve oleh setidaknya satu DNS ISP"
+    elif blocked_count == len(results):
+        final_status = "SUSPECTED_BLOCKED_ISP"
+        explanation = "Domain diblokir oleh seluruh DNS ISP yang diuji"
+    else:
+        final_status = "UNKNOWN"
+        explanation = "Tidak ada respon DNS yang meyakinkan"
 
     return {
         "domain": domain,
-        "status": status,
+        "status": final_status,
         "explanation": explanation,
-        "resolvers": results,
-        "note": (
-            "Ini bukan API resmi Nawala. "
-            "Status ditentukan berdasarkan perbandingan hasil DNS resolver."
-        )
+        "isp_results": results,
+        "note": "Ini bukan API resmi Nawala, hanya indikasi berbasis DNS ISP"
     }
-
