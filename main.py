@@ -43,13 +43,48 @@ def check_domain(domain):
 @app.get("/check")
 def check_domain(domain: str = Query(...)):
     results = {}
-    ...
+
+    for name, dns in RESOLVERS.items():
+        results[name] = dig_query(dns, domain)
+
+    # ⬇️ WAJIB ADA DEFAULT VALUE
+    status = "unknown"
+    explanation = "Kondisi tidak dapat ditentukan"
+
+    # Domain mati
+    if not results["google"] and not results["cloudflare"]:
+        status = "domain_unreachable"
+        explanation = "Domain tidak dapat di-resolve oleh DNS publik"
+
+    # DNS publik OK, tapi Nawala tidak terjangkau
+    elif results["google"] and results["cloudflare"] and results["nawala"] is None:
+        status = "nawala_unreachable"
+        explanation = (
+            "Server tidak dapat menjangkau DNS Nawala "
+            "(kemungkinan bukan jaringan Indonesia)"
+        )
+
+    # Semua resolve
+    elif results["google"] and results["cloudflare"] and results["nawala"]:
+        status = "not_blocked"
+        explanation = "Domain dapat diakses normal oleh semua DNS"
+
+    # DNS publik resolve, Nawala reachable tapi kosong
+    elif results["google"] and results["cloudflare"] and results["nawala"] == "":
+        status = "suspected_blocked_isp"
+        explanation = (
+            "Domain ter-resolve di DNS publik namun tidak di DNS Nawala "
+            "(indikasi blokir ISP)"
+        )
+
     return {
         "domain": domain,
         "status": status,
         "explanation": explanation,
         "resolvers": results,
-        "note": "Ini bukan API resmi Nawala..."
+        "note": (
+            "Ini bukan API resmi Nawala. "
+            "Status ditentukan berdasarkan perbandingan hasil DNS resolver."
+        )
     }
-
 
