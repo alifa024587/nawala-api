@@ -64,7 +64,7 @@ def relay_check(domain: str):
     try:
         r = requests.post(
             RELAY_URL,
-            params={"domain": domain},
+            json={"domain": domain},
             timeout=3
         )
         return r.json()
