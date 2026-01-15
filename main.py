@@ -41,8 +41,15 @@ def check_domain(domain):
     }
 
 @app.get("/check")
-def check(domain: str):
+def check_domain(domain: str = Query(...)):
+    results = {}
+    ...
     return {
         "domain": domain,
-        "result": check_domain(domain)
+        "status": status,
+        "explanation": explanation,
+        "resolvers": results,
+        "note": "Ini bukan API resmi Nawala..."
     }
+
+
