@@ -19,10 +19,9 @@ DNS_ISP = {
 }
 
 RELAY_URL = "http://103.146.202.228:4000/resolve"
-# GANTI IP_VPS_RELAY dengan IP VPS Indonesia kamu
 
 # ===============================
-# FUNGSI DNS ISP (LOKAL)
+# DNS ISP CHECK (LOKAL)
 # ===============================
 
 def resolve_isp(domain: str):
@@ -57,7 +56,7 @@ def resolve_isp(domain: str):
     return results
 
 # ===============================
-# FUNGSI RELAY INDONESIA
+# RELAY CHECK (INDONESIA)
 # ===============================
 
 def relay_check(domain: str):
@@ -90,7 +89,7 @@ def check_domain(domain: str = Query(..., description="Domain yang akan dicek"))
     # LOGIKA FINAL STATUS
     # ===============================
 
-    if relay_result["status"] == "OPEN":
+    if relay_result.get("status") == "OPEN":
         final_status = "NOT_BLOCKED"
         explanation = "Relay Indonesia berhasil resolve domain"
 
